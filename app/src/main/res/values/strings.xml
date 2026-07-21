@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pumpkin Server</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="status_starting">Starting…</string>
+    <string name="status_running">Running</string>
+    <string name="status_stopping">Stopping…</string>
+    <string name="status_error">Error</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_stop">Stop</string>
+    <string name="btn_retry">Retry</string>
+    <string name="log_placeholder">Server log will appear here…</string>
+    <string name="notif_channel_name">Pumpkin Server</string>
+    <string name="notif_channel_desc">Shows the running state of the Pumpkin Minecraft server</string>
+    <string name="notif_action_stop">Stop</string>
+    <string name="toast_no_notification_perm">Notification permission denied. Background operation may be limited.</string>
+</resources>

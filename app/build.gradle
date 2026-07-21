@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.pumpkinmc.android'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.pumpkinmc.android"
+        minSdk 26          // Android 8.0+ (aarch64 support)
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        // ABI filter: arm64-v8a for physical devices, x86_64 for the emulator
+        ndk {
+            abiFilters "arm64-v8a", "x86_64"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // The Pumpkin binary is stored under jniLibs but executed via exec(), not JNI
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+}

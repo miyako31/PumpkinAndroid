@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Jack-o'-lantern icon (Vector Drawable) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Stem -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M22,4 Q24,2 26,4 L25,10 L23,10 Z" />
+
+    <!-- Body – left lobe -->
+    <path
+        android:fillColor="#FF8C00"
+        android:pathData="M8,20 Q6,14 12,12 Q16,11 18,14 Q16,18 16,24 Q16,30 18,34 Q14,36 10,33 Q6,28 8,20 Z" />
+
+    <!-- Body – centre lobe -->
+    <path
+        android:fillColor="#FFA500"
+        android:pathData="M17,13 Q20,10 24,10 Q28,10 31,13 Q34,18 34,24 Q34,30 31,35 Q28,38 24,38 Q20,38 17,35 Q14,30 14,24 Q14,18 17,13 Z" />
+
+    <!-- Body – right lobe -->
+    <path
+        android:fillColor="#FF8C00"
+        android:pathData="M40,20 Q42,14 36,12 Q32,11 30,14 Q32,18 32,24 Q32,30 30,34 Q34,36 38,33 Q42,28 40,20 Z" />
+
+    <!-- Left eye -->
+    <path
+        android:fillColor="#1a1a2e"
+        android:pathData="M18,22 L20,19 L22,22 L20,25 Z" />
+
+    <!-- Right eye -->
+    <path
+        android:fillColor="#1a1a2e"
+        android:pathData="M26,22 L28,19 L30,22 L28,25 Z" />
+
+    <!-- Mouth -->
+    <path
+        android:fillColor="#1a1a2e"
+        android:pathData="M18,30 L20,28 L22,30 L24,28 L26,30 L28,28 L30,30 L29,32 L24,34 L19,32 Z" />
+</vector>

@@ -1,0 +1,231 @@
+name: Build Pumpkin Android APK
+
+on:
+  # Manual trigger with optional Pumpkin ref
+  workflow_dispatch:
+    inputs:
+      pumpkin_ref:
+        description: 'Pumpkin branch / tag / commit (leave blank for master)'
+        required: false
+        default: 'master'
+
+  # Check for new Pumpkin commits daily at 02:00 UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Also trigger on pushes that touch the app or workflows
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'app/**'
+      - '.github/workflows/**'
+
+env:
+  PUMPKIN_REPO: https://github.com/Pumpkin-MC/Pumpkin.git
+  MIN_SDK: 26
+  NDK_VERSION: '26.3.11579264'
+  JAVA_VERSION: '17'
+
+# -----------------------------------------------------------------------
+# Job 1 – Cross-compile Pumpkin (arm64 and x86_64 run in parallel)
+# -----------------------------------------------------------------------
+jobs:
+  build-pumpkin:
+    name: Cross-compile Pumpkin (${{ matrix.abi }})
+    runs-on: ubuntu-22.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust_target: aarch64-linux-android
+          - abi: x86_64
+            rust_target: x86_64-linux-android
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- Rust ----
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      # ---- Cargo cache (per target) ----
+      - name: Restore Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            Pumpkin/target/
+          key: cargo-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.rust_target }}-
+
+      # ---- cargo-ndk cache ----
+      - name: Restore cargo-ndk cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-${{ runner.os }}-v3
+
+      - name: Install cargo-ndk
+        run: |
+          if ! command -v cargo-ndk &>/dev/null; then
+            cargo install cargo-ndk --version "^3"
+          else
+            echo "cargo-ndk already cached"
+          fi
+
+      # ---- Android NDK ----
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager "ndk;${{ env.NDK_VERSION }}"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+
+      # ---- Pumpkin source ----
+      - name: Clone Pumpkin
+        run: |
+          REF="${{ github.event.inputs.pumpkin_ref || 'master' }}"
+          git clone --depth=1 --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin || \
+          git clone --depth=1 ${{ env.PUMPKIN_REPO }} Pumpkin
+          echo "PUMPKIN_COMMIT=$(git -C Pumpkin rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # ---- Build ----
+      - name: Build Pumpkin for ${{ matrix.abi }}
+        working-directory: Pumpkin
+        run: |
+          cargo ndk \
+            --target ${{ matrix.rust_target }} \
+            --android-platform ${{ env.MIN_SDK }} \
+            build --release -p pumpkin
+
+      # ---- Sanity check ----
+      - name: Verify binary
+        run: |
+          BINARY="Pumpkin/target/${{ matrix.rust_target }}/release/pumpkin"
+          ls -lh "$BINARY"
+          file "$BINARY"
+
+      # ---- Pass binary to the next job ----
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pumpkin-binary-${{ matrix.abi }}
+          path: Pumpkin/target/${{ matrix.rust_target }}/release/pumpkin
+          retention-days: 1
+
+# -----------------------------------------------------------------------
+# Job 2 – Build the Android APK
+# -----------------------------------------------------------------------
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-22.04
+    needs: build-pumpkin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ---- Place binaries in assets ----
+      - name: Download arm64-v8a binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pumpkin-binary-arm64-v8a
+          path: app/src/main/assets/pumpkin/arm64-v8a/
+
+      - name: Mark arm64-v8a binary executable
+        run: chmod +x app/src/main/assets/pumpkin/arm64-v8a/pumpkin
+
+      - name: Download x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pumpkin-binary-x86_64
+          path: app/src/main/assets/pumpkin/x86_64/
+
+      - name: Mark x86_64 binary executable
+        run: chmod +x app/src/main/assets/pumpkin/x86_64/pumpkin
+
+      # ---- Verify asset layout ----
+      - name: Show asset layout
+        run: |
+          echo "=== assets/pumpkin/ ==="
+          find app/src/main/assets/pumpkin -type f | while read f; do
+            echo "  $f  ($(du -sh "$f" | cut -f1))"
+          done
+
+      # ---- Gradle cache ----
+      - name: Restore Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/
+            ~/.gradle/wrapper/
+          key: gradle-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      # ---- Build APKs ----
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Build Release APK (unsigned)
+        run: ./gradlew assembleRelease --no-daemon
+
+      # ---- Summary ----
+      - name: Show APK sizes
+        run: |
+          echo "=== Build outputs ==="
+          find app/build/outputs/apk -name "*.apk" | while read apk; do
+            echo "  $apk  ($(du -sh "$apk" | cut -f1))"
+          done
+
+      # ---- Upload APKs ----
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PumpkinAndroid-APK
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+
+      # ---- Publish to GitHub Releases on tag push ----
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          body: |
+            ## 🎃 Pumpkin Android
+
+            Run a Pumpkin Minecraft server on Android.
+
+            ### Installation
+            1. Download `app-debug.apk`
+            2. Enable *Install from unknown sources* in Android settings
+            3. Install the APK
+
+            ### Requirements
+            - Android 8.0 (API 26) or higher
+            - arm64-v8a (physical devices) / x86_64 (emulator)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

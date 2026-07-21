@@ -1,0 +1,198 @@
+name: Signed Release
+
+# Runs only when a version tag (e.g. v1.0.0) is pushed, or manually triggered
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name (e.g. 1.2.0)'
+        required: true
+        default: '1.0.0'
+
+env:
+  PUMPKIN_REPO: https://github.com/Pumpkin-MC/Pumpkin.git
+  MIN_SDK: 26
+  NDK_VERSION: '26.3.11579264'
+  JAVA_VERSION: '17'
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1 – Cross-compile (identical to build.yml; duplicated for independence)
+  # -----------------------------------------------------------------------
+  build-pumpkin:
+    name: Cross-compile (${{ matrix.abi }})
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust_target: aarch64-linux-android
+          - abi: x86_64
+            rust_target: x86_64-linux-android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            Pumpkin/target/
+          key: cargo-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-${{ runner.os }}-v3
+
+      - run: command -v cargo-ndk || cargo install cargo-ndk --version "^3"
+
+      - uses: android-actions/setup-android@v3
+
+      - run: |
+          sdkmanager "ndk;${{ env.NDK_VERSION }}"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+
+      - run: git clone --depth=1 ${{ env.PUMPKIN_REPO }} Pumpkin
+
+      - name: Build
+        working-directory: Pumpkin
+        run: |
+          cargo ndk \
+            --target ${{ matrix.rust_target }} \
+            --android-platform ${{ env.MIN_SDK }} \
+            build --release -p pumpkin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pumpkin-binary-${{ matrix.abi }}
+          path: Pumpkin/target/${{ matrix.rust_target }}/release/pumpkin
+          retention-days: 1
+
+  # -----------------------------------------------------------------------
+  # Job 2 – Build a signed APK and publish it to GitHub Releases
+  # -----------------------------------------------------------------------
+  signed-release:
+    name: Signed APK & Release
+    runs-on: ubuntu-22.04
+    needs: build-pumpkin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - uses: android-actions/setup-android@v3
+
+      # ---- Place binaries ----
+      - uses: actions/download-artifact@v4
+        with:
+          name: pumpkin-binary-arm64-v8a
+          path: app/src/main/assets/pumpkin/arm64-v8a/
+      - run: chmod +x app/src/main/assets/pumpkin/arm64-v8a/pumpkin
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pumpkin-binary-x86_64
+          path: app/src/main/assets/pumpkin/x86_64/
+      - run: chmod +x app/src/main/assets/pumpkin/x86_64/pumpkin
+
+      # ---- Derive version from tag or manual input ----
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"   # strip leading "v"
+          else
+            VERSION="${{ github.event.inputs.version_name }}"
+          fi
+          echo "name=$VERSION"              >> $GITHUB_OUTPUT
+          echo "code=$(date +%Y%m%d)"      >> $GITHUB_OUTPUT
+
+      # ---- Patch versionCode / versionName ----
+      - name: Update version in build.gradle
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ steps.version.outputs.code }}/" app/build.gradle
+          sed -i 's/versionName "[^"]*"/versionName "${{ steps.version.outputs.name }}"/' app/build.gradle
+
+      # ---- Gradle cache ----
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/
+            ~/.gradle/wrapper/
+          key: gradle-${{ hashFiles('**/*.gradle') }}
+
+      # ---- Restore signing keystore from Secrets ----
+      #
+      # Register these secrets in your repository:
+      #   KEYSTORE_BASE64  – base64-encoded .jks file
+      #   KEY_ALIAS        – key alias
+      #   KEY_PASSWORD     – key password
+      #   STORE_PASSWORD   – keystore password
+      #
+      # Run scripts/generate_keystore.sh locally to create them.
+      - name: Restore keystore
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
+          echo "KEYSTORE_PATH=$PWD/keystore.jks" >> $GITHUB_ENV
+
+      # ---- Build signed (or unsigned fallback) APK ----
+      - name: Build APK
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS:      ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:   ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -f keystore.jks ]; then
+            cat >> gradle.properties << EOF
+          RELEASE_STORE_FILE=${{ env.KEYSTORE_PATH }}
+          RELEASE_STORE_PASSWORD=${STORE_PASSWORD}
+          RELEASE_KEY_ALIAS=${KEY_ALIAS}
+          RELEASE_KEY_PASSWORD=${KEY_PASSWORD}
+          EOF
+            ./gradlew assembleRelease --no-daemon
+          else
+            echo "No keystore found – building unsigned APK"
+            ./gradlew assembleRelease --no-daemon
+          fi
+
+      # ---- Publish to GitHub Releases ----
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Pumpkin Android v${{ steps.version.outputs.name }}
+          files: app/build/outputs/apk/**/*.apk
+          body: |
+            ## 🎃 Pumpkin Android v${{ steps.version.outputs.name }}
+
+            Run a Pumpkin Minecraft server on Android.
+
+            ### Requirements
+            | | |
+            |---|---|
+            | Android | 8.0 (API 26) or higher |
+            | Architecture | arm64-v8a (devices) / x86_64 (emulator) |
+
+            ### Installation
+            1. Download the `.apk` below
+            2. Enable *Install from unknown sources* in Android settings
+            3. Install the APK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

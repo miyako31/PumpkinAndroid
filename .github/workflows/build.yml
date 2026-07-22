@@ -177,6 +177,10 @@ jobs:
             echo "  $f  ($(du -sh "$f" | cut -f1))"
           done
 
+      # ---- Ensure gradlew is executable ----
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       # ---- Gradle cache ----
       - name: Restore Gradle cache
         uses: actions/cache@v4

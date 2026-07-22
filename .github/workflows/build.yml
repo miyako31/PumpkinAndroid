@@ -1,7 +1,6 @@
 name: Build Pumpkin Android APK
 
 on:
-  # Manual trigger with optional Pumpkin ref
   workflow_dispatch:
     inputs:
       pumpkin_ref:
@@ -9,11 +8,9 @@ on:
         required: false
         default: 'master'
 
-  # Check for new Pumpkin commits daily at 02:00 UTC
   schedule:
     - cron: '0 2 * * *'
 
-  # Also trigger on pushes that touch the app or workflows
   push:
     branches: [ main, master ]
     paths:
@@ -46,6 +43,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ---- Java 17 must come BEFORE setup-android (sdkmanager requires JDK 17+) ----
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      # ---- Android SDK + NDK ----
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager "ndk;${{ env.NDK_VERSION }}"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
       # ---- Rust ----
       - name: Install Rust toolchain
@@ -80,15 +93,6 @@ jobs:
           else
             echo "cargo-ndk already cached"
           fi
-
-      # ---- Android NDK ----
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK
-        run: |
-          sdkmanager "ndk;${{ env.NDK_VERSION }}"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
       # ---- Pumpkin source ----
       - name: Clone Pumpkin
@@ -134,6 +138,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ---- Java 17 must come BEFORE setup-android ----
       - name: Set up Java ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:

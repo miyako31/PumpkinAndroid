@@ -94,12 +94,14 @@ jobs:
             echo "cargo-ndk already cached"
           fi
 
-      # ---- Pumpkin source ----
+      # ---- Pumpkin source (submodules required for pumpkin-plugin-wit) ----
       - name: Clone Pumpkin
         run: |
           REF="${{ github.event.inputs.pumpkin_ref || 'master' }}"
-          git clone --depth=1 --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin || \
-          git clone --depth=1 ${{ env.PUMPKIN_REPO }} Pumpkin
+          git clone --recurse-submodules --depth=1 --shallow-submodules \
+            --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin || \
+          git clone --recurse-submodules --depth=1 --shallow-submodules \
+            ${{ env.PUMPKIN_REPO }} Pumpkin
           echo "PUMPKIN_COMMIT=$(git -C Pumpkin rev-parse --short HEAD)" >> $GITHUB_ENV
 
       # ---- Build ----

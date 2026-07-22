@@ -56,6 +56,12 @@ jobs:
 
       - run: command -v cargo-ndk || cargo install cargo-ndk --version "^3"
 
+      # Java 17 must come BEFORE setup-android (sdkmanager v16+ requires JDK 17+)
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
       - uses: android-actions/setup-android@v3
 
       - run: |

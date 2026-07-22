@@ -127,7 +127,5 @@ chmod +x cross_compile.sh
 
 ## License
 
-This project is licensed under the **GPL-3.0** license,
-in compliance with [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin)'s GPL-3.0 license.
-
-See [LICENSE](./LICENSE) for details.
+Android wrapper code: MIT  
+Pumpkin: GPL-3.0

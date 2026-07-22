@@ -98,7 +98,7 @@ build_for_android() {
 
         cargo ndk \
             --target "$target" \
-            --android-platform "$MIN_SDK" \
+            --platform "$MIN_SDK" \
             build --release -p pumpkin
 
         # Locate the output binary

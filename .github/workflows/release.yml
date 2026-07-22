@@ -75,7 +75,7 @@ jobs:
         run: |
           cargo ndk \
             --target ${{ matrix.rust_target }} \
-            --android-platform ${{ env.MIN_SDK }} \
+            --platform ${{ env.MIN_SDK }} \
             build --release -p pumpkin
 
       - uses: actions/upload-artifact@v4

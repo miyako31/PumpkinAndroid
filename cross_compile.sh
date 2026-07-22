@@ -76,10 +76,13 @@ install_cargo_ndk() {
 clone_pumpkin() {
     if [ -d "$PUMPKIN_DIR" ]; then
         info "Updating Pumpkin repository..."
-        cd "$PUMPKIN_DIR" && git pull && cd ..
+        cd "$PUMPKIN_DIR"
+        git pull
+        git submodule update --init --recursive
+        cd ..
     else
-        info "Cloning Pumpkin..."
-        git clone --depth=1 "$PUMPKIN_REPO" "$PUMPKIN_DIR"
+        info "Cloning Pumpkin (with submodules)..."
+        git clone --recurse-submodules --depth=1 --shallow-submodules             "$PUMPKIN_REPO" "$PUMPKIN_DIR"
     fi
 }
 

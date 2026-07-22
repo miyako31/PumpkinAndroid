@@ -68,7 +68,10 @@ jobs:
           sdkmanager "ndk;${{ env.NDK_VERSION }}"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - run: git clone --depth=1 ${{ env.PUMPKIN_REPO }} Pumpkin
+      - name: Clone Pumpkin
+        run: |
+          git clone --recurse-submodules --depth=1 --shallow-submodules \
+            ${{ env.PUMPKIN_REPO }} Pumpkin
 
       - name: Build
         working-directory: Pumpkin

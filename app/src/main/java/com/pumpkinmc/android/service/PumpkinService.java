@@ -17,6 +17,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import com.pumpkinmc.android.R;
 import com.pumpkinmc.android.ui.MainActivity;
 import com.pumpkinmc.android.util.BinaryInstaller;
+import com.pumpkinmc.android.util.NetworkUtil;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -105,7 +106,7 @@ public class PumpkinService extends Service {
 
                 serverProcess = pb.start();
                 setStatus(Status.RUNNING);
-                updateNotification("Running \uD83C\uDF83");
+                updateNotification(buildRunningNotificationText());
 
                 // 4. Stream stdout/stderr to the UI in real time
                 try (BufferedReader reader = new BufferedReader(
@@ -203,6 +204,12 @@ public class PumpkinService extends Service {
     private void updateNotification(String text) {
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.notify(1, buildNotification(text));
+    }
+
+    /** e.g. "Connect: 192.168.1.42:25565" so the IP is visible without opening the app. */
+    private String buildRunningNotificationText() {
+        String ip = NetworkUtil.getLocalIpAddress();
+        return ip != null ? "Connect: " + ip + ":25565" : "Running \uD83C\uDF83 (no LAN connection)";
     }
 
     // ---------------------------------------------------------------

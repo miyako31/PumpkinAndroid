@@ -66,7 +66,27 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
-      # ---- Cargo cache (per target) ----
+      # ---- Pumpkin source (submodules required for pumpkin-plugin-wit) ----
+      # Cloned BEFORE the cache-restore step so that hashFiles() below can
+      # actually see Pumpkin/Cargo.lock, and so this step's "rm -rf Pumpkin"
+      # never runs after (and therefore never deletes) a restored cache.
+      - name: Clone Pumpkin
+        run: |
+          REF="${{ github.event.inputs.pumpkin_ref || 'master' }}"
+          rm -rf Pumpkin
+          if ! git clone --recurse-submodules --depth=1 --shallow-submodules --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin; then
+            echo "Branch/tag '$REF' not found, falling back to default branch"
+            rm -rf Pumpkin
+            git clone --recurse-submodules --depth=1 --shallow-submodules ${{ env.PUMPKIN_REPO }} Pumpkin
+          fi
+          echo "PUMPKIN_COMMIT=$(git -C Pumpkin rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # Build output is written OUTSIDE the Pumpkin/ directory so that
+      # re-cloning Pumpkin (rm -rf Pumpkin above) never touches the cache.
+      - name: Set CARGO_TARGET_DIR
+        run: echo "CARGO_TARGET_DIR=${{ github.workspace }}/cargo-target" >> $GITHUB_ENV
+
+      # ---- Cargo cache (per target, keyed on the actual Cargo.lock) ----
       - name: Restore Cargo cache
         uses: actions/cache@v4
         with:
@@ -74,8 +94,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            Pumpkin/target/
-          key: cargo-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}
+            cargo-target/
+          key: cargo-${{ matrix.rust_target }}-${{ hashFiles('Pumpkin/Cargo.lock') }}
           restore-keys: |
             cargo-${{ matrix.rust_target }}-
 
@@ -94,18 +114,6 @@ jobs:
             echo "cargo-ndk already cached"
           fi
 
-      # ---- Pumpkin source (submodules required for pumpkin-plugin-wit) ----
-      - name: Clone Pumpkin
-        run: |
-          REF="${{ github.event.inputs.pumpkin_ref || 'master' }}"
-          rm -rf Pumpkin
-          if ! git clone --recurse-submodules --depth=1 --shallow-submodules --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin; then
-            echo "Branch/tag '$REF' not found, falling back to default branch"
-            rm -rf Pumpkin
-            git clone --recurse-submodules --depth=1 --shallow-submodules ${{ env.PUMPKIN_REPO }} Pumpkin
-          fi
-          echo "PUMPKIN_COMMIT=$(git -C Pumpkin rev-parse --short HEAD)" >> $GITHUB_ENV
-
       # ---- Build ----
       - name: Build Pumpkin for ${{ matrix.abi }}
         working-directory: Pumpkin
@@ -118,7 +126,7 @@ jobs:
       # ---- Sanity check ----
       - name: Verify binary
         run: |
-          BINARY="Pumpkin/target/${{ matrix.rust_target }}/release/pumpkin"
+          BINARY="cargo-target/${{ matrix.rust_target }}/release/pumpkin"
           ls -lh "$BINARY"
           file "$BINARY"
 
@@ -127,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pumpkin-binary-${{ matrix.abi }}
-          path: Pumpkin/target/${{ matrix.rust_target }}/release/pumpkin
+          path: cargo-target/${{ matrix.rust_target }}/release/pumpkin
           retention-days: 1
 
 # -----------------------------------------------------------------------
@@ -152,30 +160,35 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # ---- Place binaries in assets ----
+      # ---- Place binaries as native "libraries" so Android extracts them
+      #      as executable files (files dir copies are blocked by W^X) ----
       - name: Download arm64-v8a binary
         uses: actions/download-artifact@v4
         with:
           name: pumpkin-binary-arm64-v8a
-          path: app/src/main/assets/pumpkin/arm64-v8a/
+          path: app/src/main/jniLibs/arm64-v8a/
 
-      - name: Mark arm64-v8a binary executable
-        run: chmod +x app/src/main/assets/pumpkin/arm64-v8a/pumpkin
+      - name: Rename and mark arm64-v8a binary executable
+        run: |
+          mv app/src/main/jniLibs/arm64-v8a/pumpkin app/src/main/jniLibs/arm64-v8a/libpumpkin.so
+          chmod +x app/src/main/jniLibs/arm64-v8a/libpumpkin.so
 
       - name: Download x86_64 binary
         uses: actions/download-artifact@v4
         with:
           name: pumpkin-binary-x86_64
-          path: app/src/main/assets/pumpkin/x86_64/
+          path: app/src/main/jniLibs/x86_64/
 
-      - name: Mark x86_64 binary executable
-        run: chmod +x app/src/main/assets/pumpkin/x86_64/pumpkin
-
-      # ---- Verify asset layout ----
-      - name: Show asset layout
+      - name: Rename and mark x86_64 binary executable
         run: |
-          echo "=== assets/pumpkin/ ==="
-          find app/src/main/assets/pumpkin -type f | while read f; do
+          mv app/src/main/jniLibs/x86_64/pumpkin app/src/main/jniLibs/x86_64/libpumpkin.so
+          chmod +x app/src/main/jniLibs/x86_64/libpumpkin.so
+
+      # ---- Verify layout ----
+      - name: Show jniLibs layout
+        run: |
+          echo "=== jniLibs/ ==="
+          find app/src/main/jniLibs -type f | while read f; do
             echo "  $f  ($(du -sh "$f" | cut -f1))"
           done
 

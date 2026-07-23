@@ -37,6 +37,15 @@ android {
             jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
+
+    // Force native libraries to be extracted to disk (nativeLibraryDir) rather
+    // than kept compressed inside the APK. Required so the Pumpkin "library"
+    // exists as a real, executable file we can exec() at runtime.
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {

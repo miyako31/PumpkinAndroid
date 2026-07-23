@@ -1,124 +1,76 @@
 package com.pumpkinmc.android.util;
 
 import android.content.Context;
-import android.content.SharedPreferences;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
-import android.os.Build;
+import android.content.pm.ApplicationInfo;
 import android.util.Log;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 
 /**
- * Copies the Pumpkin binary bundled in assets/ into the app's private storage
- * and keeps it up to date across app updates.
+ * Locates the Pumpkin binary that Android extracted into the app's
+ * native library directory at install time.
  *
- * Expected asset layout:
- *   assets/pumpkin/
- *     ├── arm64-v8a/pumpkin    <- physical devices (aarch64)
- *     └── x86_64/pumpkin       <- emulator (x86_64)
+ * IMPORTANT: Since Android 10 (API 29), the OS enforces W^X (write XOR
+ * execute) on an app's private files directory (getFilesDir()). A binary
+ * copied there at runtime and marked with setExecutable(true) will still
+ * fail with "Permission denied" (errno 13) when exec'd, because that
+ * directory is mounted noexec / blocked by SELinux for regular files.
+ *
+ * The only location on modern Android where a bundled native binary is
+ * both writable-by-nobody and executable-by-the-app is the directory
+ * Android creates FROM jniLibs/ at install/update time:
+ *   ApplicationInfo.nativeLibraryDir
+ *   (e.g. /data/app/~~.../com.pumpkinmc.android-xxx/lib/arm64)
+ *
+ * For Android to extract a file from jniLibs/<abi>/ into that directory,
+ * the file name must match the native library naming convention:
+ *   lib<name>.so
+ *
+ * So the Pumpkin binary must be bundled as:
+ *   app/src/main/jniLibs/arm64-v8a/libpumpkin.so
+ *   app/src/main/jniLibs/x86_64/libpumpkin.so
+ *
+ * It is a regular ELF executable, not an actual shared library - only the
+ * name and location matter to satisfy Android's packaging/extraction rules.
  */
 public class BinaryInstaller {
 
     private static final String TAG = "BinaryInstaller";
-    private static final String PREF_NAME = "pumpkin_install";
-    private static final String PREF_INSTALLED_VERSION = "installed_version";
-    private static final String BINARY_NAME = "pumpkin";
+    private static final String LIB_NAME = "libpumpkin.so";
 
     /**
-     * Installs the binary (only re-copies when the app version has changed)
-     * and returns a {@link File} pointing to the executable.
+     * Returns the Pumpkin executable already extracted by Android into the
+     * app's native library directory. No copying is required and no
+     * "Permission denied" issue occurs, since this directory is executable
+     * by design (it holds real .so libraries too).
      *
-     * @param context   application context
-     * @param serverDir destination directory for server data
-     * @return executable binary file, or {@code null} on failure
+     * @param context application context
+     * @return the executable File, or {@code null} if not found
      */
-    public static File install(Context context, File serverDir) {
-        File binDir = new File(serverDir, "bin");
-        if (!binDir.exists()) binDir.mkdirs();
+    public static File locate(Context context) {
+        ApplicationInfo appInfo = context.getApplicationInfo();
+        String nativeLibDir = appInfo.nativeLibraryDir;
 
-        File binary = new File(binDir, BINARY_NAME);
-        String abi = getPrimaryAbi();
-        String assetPath = "pumpkin/" + abi + "/" + BINARY_NAME;
-
-        // Skip copy if the binary is already up to date for this app version
-        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        int installedVersion = prefs.getInt(PREF_INSTALLED_VERSION, -1);
-        int currentVersion = getVersionCode(context);
-
-        if (binary.exists() && installedVersion == currentVersion) {
-            Log.d(TAG, "Binary is up to date (v" + currentVersion + ")");
-            binary.setExecutable(true);
-            return binary;
-        }
-
-        Log.i(TAG, "Installing binary: " + assetPath + " -> " + binary.getAbsolutePath());
-
-        try (InputStream in = context.getAssets().open(assetPath);
-             OutputStream out = new FileOutputStream(binary)) {
-
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = in.read(buf)) != -1) {
-                out.write(buf, 0, len);
-            }
-            out.flush();
-
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to copy binary from assets: " + assetPath, e);
-            // Try the other ABI as a fallback
-            return tryFallbackAbi(context, binDir, binary, abi);
-        }
-
-        binary.setExecutable(true, false); // owner-executable
-        prefs.edit().putInt(PREF_INSTALLED_VERSION, currentVersion).apply();
-        Log.i(TAG, "Installation complete: " + binary.getAbsolutePath());
-        return binary;
-    }
-
-    /**
-     * Returns the best ABI string supported by this device.
-     * Pumpkin supports aarch64 (arm64-v8a) and x86_64.
-     */
-    public static String getPrimaryAbi() {
-        for (String abi : Build.SUPPORTED_ABIS) {
-            if (abi.equals("arm64-v8a") || abi.equals("x86_64")) {
-                return abi;
-            }
-        }
-        // Fallback – shouldn't happen on any modern Android device
-        return Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "arm64-v8a";
-    }
-
-    /** Tries the alternate ABI when the primary one is not bundled. */
-    private static File tryFallbackAbi(Context context, File binDir, File binary, String primaryAbi) {
-        String fallback = primaryAbi.equals("arm64-v8a") ? "x86_64" : "arm64-v8a";
-        String assetPath = "pumpkin/" + fallback + "/" + BINARY_NAME;
-        Log.w(TAG, "Trying fallback ABI: " + fallback);
-        try (InputStream in = context.getAssets().open(assetPath);
-             OutputStream out = new FileOutputStream(binary)) {
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = in.read(buf)) != -1) out.write(buf, 0, len);
-            binary.setExecutable(true, false);
-            return binary;
-        } catch (IOException e2) {
-            Log.e(TAG, "Fallback ABI also failed", e2);
+        if (nativeLibDir == null) {
+            Log.e(TAG, "nativeLibraryDir is null - device/build configuration issue");
             return null;
         }
-    }
 
-    private static int getVersionCode(Context context) {
-        try {
-            PackageInfo info = context.getPackageManager()
-                    .getPackageInfo(context.getPackageName(), 0);
-            return info.versionCode;
-        } catch (PackageManager.NameNotFoundException e) {
-            return 1;
+        File binary = new File(nativeLibDir, LIB_NAME);
+
+        if (!binary.exists()) {
+            Log.e(TAG, "Pumpkin binary not found at: " + binary.getAbsolutePath()
+                    + "\nMake sure app/src/main/jniLibs/<abi>/" + LIB_NAME + " is bundled in the APK.");
+            return null;
         }
+
+        if (!binary.canExecute()) {
+            // Should already be executable (Android sets this on extraction),
+            // but attempt to fix it just in case.
+            binary.setExecutable(true);
+        }
+
+        Log.i(TAG, "Using Pumpkin binary at: " + binary.getAbsolutePath());
+        return binary;
     }
 }

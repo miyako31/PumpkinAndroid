@@ -19,7 +19,7 @@ set -euo pipefail
 # --- Configuration ---
 PUMPKIN_REPO="https://github.com/Pumpkin-MC/Pumpkin.git"
 PUMPKIN_DIR="./Pumpkin"
-OUTPUT_DIR="./app/src/main/assets/pumpkin"
+OUTPUT_DIR="./app/src/main/jniLibs"
 MIN_SDK=26
 
 # Targets to build: "<rust_triple>:<android_abi>"
@@ -110,10 +110,12 @@ build_for_android() {
         if [ -f "$src" ]; then
             dst="../$OUTPUT_DIR/$abi"
             mkdir -p "$dst"
-            cp "$src" "$dst/pumpkin"
-            chmod +x "$dst/pumpkin"
-            size=$(du -sh "$dst/pumpkin" | cut -f1)
-            info "  -> $dst/pumpkin ($size)"
+            # Named libpumpkin.so so Android extracts it as an executable
+            # native library rather than blocking it under W^X in files dir.
+            cp "$src" "$dst/libpumpkin.so"
+            chmod +x "$dst/libpumpkin.so"
+            size=$(du -sh "$dst/libpumpkin.so" | cut -f1)
+            info "  -> $dst/libpumpkin.so ($size)"
         else
             warn "Binary not found at: $src"
             warn "Check manually: find target -name pumpkin -type f"
@@ -128,7 +130,7 @@ verify_output() {
     info "Verifying output..."
     for pair in "${TARGETS[@]}"; do
         abi="${pair##*:}"
-        f="$OUTPUT_DIR/$abi/pumpkin"
+        f="$OUTPUT_DIR/$abi/libpumpkin.so"
         if [ -f "$f" ]; then
             file "$f" 2>/dev/null || true
             info "  OK  $f"
@@ -154,7 +156,7 @@ main() {
 
     echo ""
     info "Done! Binaries produced:"
-    find "$OUTPUT_DIR" -type f -name "pumpkin" 2>/dev/null
+    find "$OUTPUT_DIR" -type f -name "libpumpkin.so" 2>/dev/null
     echo ""
     info "Next step: open the project in Android Studio and build the APK."
 }

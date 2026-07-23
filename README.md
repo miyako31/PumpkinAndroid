@@ -10,14 +10,24 @@ Run a [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) Minecraft server natively
 
 ```
 APK
-└── assets/pumpkin/
-      ├── arm64-v8a/pumpkin   ← Rust binary (physical devices)
-      └── x86_64/pumpkin      ← Rust binary (emulator)
+└── jniLibs/
+      ├── arm64-v8a/libpumpkin.so   ← Rust binary (physical devices)
+      └── x86_64/libpumpkin.so      ← Rust binary (emulator)
 ```
 
-On first launch `BinaryInstaller` copies the binary from assets into the app's
-private storage (`/data/data/com.pumpkinmc.android/files/pumpkin/`), then
-`PumpkinService` starts it as a foreground service via `ProcessBuilder`.
+The Pumpkin binary is packaged as a native "library" named `libpumpkin.so`
+(it's a regular ELF executable, not an actual shared library — only the name
+and location matter). Android extracts it, at install time, into the app's
+`nativeLibraryDir`, which is the *only* location in an app's private storage
+that is guaranteed to be executable on Android 10+ (API 29+). Since Android
+10, the OS enforces W^X (write XOR execute) on `getFilesDir()`, so a binary
+copied there at runtime and `chmod +x`'d will still fail with
+`Permission denied` (errno 13) when executed — copying to assets/ + files dir
+does **not** work on modern Android.
+
+`BinaryInstaller.locate()` simply looks up the already-extracted binary in
+`nativeLibraryDir`, and `PumpkinService` starts it as a foreground service via
+`ProcessBuilder`.
 
 ---
 

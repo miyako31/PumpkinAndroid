@@ -80,21 +80,17 @@ public class PumpkinService extends Service {
             try {
                 setStatus(Status.STARTING);
 
-                // 1. Install binary into the app's private storage
+                // 1. Locate the Pumpkin binary Android extracted from jniLibs/
+                //    at install time (executable by design, unlike files dir)
                 File serverDir = getServerDirectory();
-                File binary = BinaryInstaller.install(this, serverDir);
+                File binary = BinaryInstaller.locate(this);
                 if (binary == null) {
-                    broadcast(ACTION_LOG, "ERROR: Failed to install server binary");
+                    broadcast(ACTION_LOG, "ERROR: Pumpkin binary not found in app package");
                     setStatus(Status.ERROR);
                     return;
                 }
 
-                // 2. Ensure the binary is executable
-                if (!binary.canExecute()) {
-                    binary.setExecutable(true);
-                }
-
-                // 3. Launch the server process
+                // 2. Launch the server process
                 List<String> cmd = new ArrayList<>();
                 cmd.add(binary.getAbsolutePath());
                 // Add extra flags here if needed: cmd.add("--config"); cmd.add("...");

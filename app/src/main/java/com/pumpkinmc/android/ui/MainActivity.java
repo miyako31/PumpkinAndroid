@@ -25,20 +25,29 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.pumpkinmc.android.R;
 import com.pumpkinmc.android.service.PumpkinService;
+import com.pumpkinmc.android.util.NetworkUtil;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int MAX_LOG_LINES = 500;
     private static final int REQ_NOTIFICATION = 1001;
+    private static final int SERVER_PORT = 25565;
+
+    // Strips ANSI color/formatting escape codes (e.g. "\u001B[32m") that
+    // Pumpkin's logger emits for terminal output, which would otherwise
+    // show up as garbled text like "[32m" in the log view.
+    private static final Pattern ANSI_PATTERN = Pattern.compile("\u001B\\[[;\\d]*m");
 
     private Button btnStartStop;
     private TextView tvLog;
     private TextView tvStatus;
     private TextView tvInfo;
+    private TextView tvIp;
     private ScrollView scrollLog;
 
     private PumpkinService pumpkinService;
@@ -58,6 +67,7 @@ public class MainActivity extends AppCompatActivity {
         tvLog        = findViewById(R.id.tv_log);
         tvStatus     = findViewById(R.id.tv_status);
         tvInfo       = findViewById(R.id.tv_info);
+        tvIp         = findViewById(R.id.tv_ip);
         scrollLog    = findViewById(R.id.scroll_log);
 
         tvLog.setMovementMethod(new ScrollingMovementMethod());
@@ -182,25 +192,39 @@ public class MainActivity extends AppCompatActivity {
                     tvStatus.setTextColor(getColor(R.color.status_running));
                     btnStartStop.setText("Stop");
                     btnStartStop.setEnabled(true);
+                    updateIpDisplay();
                     break;
                 case STOPPING:
                     tvStatus.setText("Stopping...");
                     tvStatus.setTextColor(getColor(R.color.status_starting));
                     btnStartStop.setText("Stopping...");
                     btnStartStop.setEnabled(false);
+                    tvIp.setText("");
                     break;
                 case ERROR:
                     tvStatus.setText("Error");
                     tvStatus.setTextColor(getColor(R.color.status_error));
                     btnStartStop.setText("Retry");
                     btnStartStop.setEnabled(true);
+                    tvIp.setText("");
                     break;
             }
         });
     }
 
-    private void appendLog(String line) {
+    /** Shows "Connect: <ip>:25565", or a hint if no LAN connection is found. */
+    private void updateIpDisplay() {
+        String ip = NetworkUtil.getLocalIpAddress();
+        if (ip != null) {
+            tvIp.setText("Connect: " + ip + ":" + SERVER_PORT);
+        } else {
+            tvIp.setText("No local network connection found");
+        }
+    }
+
+    private void appendLog(String rawLine) {
         runOnUiThread(() -> {
+            String line = ANSI_PATTERN.matcher(rawLine).replaceAll("");
             String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                     .format(new Date());
             logBuffer.append("[").append(timestamp).append("] ").append(line).append("\n");

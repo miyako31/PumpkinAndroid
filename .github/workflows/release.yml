@@ -41,13 +41,25 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
+      # Cloned before the cache-restore step so hashFiles() can see Cargo.lock
+      - name: Clone Pumpkin
+        run: |
+          git clone --recurse-submodules --depth=1 --shallow-submodules \
+            ${{ env.PUMPKIN_REPO }} Pumpkin
+
+      # Build output lives outside Pumpkin/ so a future re-clone never wipes it
+      - name: Set CARGO_TARGET_DIR
+        run: echo "CARGO_TARGET_DIR=${{ github.workspace }}/cargo-target" >> $GITHUB_ENV
+
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/
             ~/.cargo/git/
-            Pumpkin/target/
-          key: cargo-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}
+            cargo-target/
+          key: cargo-${{ matrix.rust_target }}-${{ hashFiles('Pumpkin/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.rust_target }}-
 
       - uses: actions/cache@v4
         with:
@@ -68,11 +80,6 @@ jobs:
           sdkmanager "ndk;${{ env.NDK_VERSION }}"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Clone Pumpkin
-        run: |
-          git clone --recurse-submodules --depth=1 --shallow-submodules \
-            ${{ env.PUMPKIN_REPO }} Pumpkin
-
       - name: Build
         working-directory: Pumpkin
         run: |
@@ -84,7 +91,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pumpkin-binary-${{ matrix.abi }}
-          path: Pumpkin/target/${{ matrix.rust_target }}/release/pumpkin
+          path: cargo-target/${{ matrix.rust_target }}/release/pumpkin
           retention-days: 1
 
   # -----------------------------------------------------------------------
@@ -105,18 +112,22 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      # ---- Place binaries ----
+      # ---- Place binaries as native "libraries" (files dir exec is blocked by W^X) ----
       - uses: actions/download-artifact@v4
         with:
           name: pumpkin-binary-arm64-v8a
-          path: app/src/main/assets/pumpkin/arm64-v8a/
-      - run: chmod +x app/src/main/assets/pumpkin/arm64-v8a/pumpkin
+          path: app/src/main/jniLibs/arm64-v8a/
+      - run: |
+          mv app/src/main/jniLibs/arm64-v8a/pumpkin app/src/main/jniLibs/arm64-v8a/libpumpkin.so
+          chmod +x app/src/main/jniLibs/arm64-v8a/libpumpkin.so
 
       - uses: actions/download-artifact@v4
         with:
           name: pumpkin-binary-x86_64
-          path: app/src/main/assets/pumpkin/x86_64/
-      - run: chmod +x app/src/main/assets/pumpkin/x86_64/pumpkin
+          path: app/src/main/jniLibs/x86_64/
+      - run: |
+          mv app/src/main/jniLibs/x86_64/pumpkin app/src/main/jniLibs/x86_64/libpumpkin.so
+          chmod +x app/src/main/jniLibs/x86_64/libpumpkin.so
 
       # ---- Derive version from tag or manual input ----
       - name: Resolve version

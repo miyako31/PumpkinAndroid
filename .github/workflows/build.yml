@@ -98,10 +98,12 @@ jobs:
       - name: Clone Pumpkin
         run: |
           REF="${{ github.event.inputs.pumpkin_ref || 'master' }}"
-          git clone --recurse-submodules --depth=1 --shallow-submodules \
-            --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin || \
-          git clone --recurse-submodules --depth=1 --shallow-submodules \
-            ${{ env.PUMPKIN_REPO }} Pumpkin
+          rm -rf Pumpkin
+          if ! git clone --recurse-submodules --depth=1 --shallow-submodules --branch "$REF" ${{ env.PUMPKIN_REPO }} Pumpkin; then
+            echo "Branch/tag '$REF' not found, falling back to default branch"
+            rm -rf Pumpkin
+            git clone --recurse-submodules --depth=1 --shallow-submodules ${{ env.PUMPKIN_REPO }} Pumpkin
+          fi
           echo "PUMPKIN_COMMIT=$(git -C Pumpkin rev-parse --short HEAD)" >> $GITHUB_ENV
 
       # ---- Build ----

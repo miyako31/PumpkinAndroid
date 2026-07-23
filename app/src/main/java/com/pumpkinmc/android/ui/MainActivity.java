@@ -25,7 +25,6 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.pumpkinmc.android.R;
 import com.pumpkinmc.android.service.PumpkinService;
-import com.pumpkinmc.android.util.BinaryInstaller;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -64,7 +63,7 @@ public class MainActivity extends AppCompatActivity {
         tvLog.setMovementMethod(new ScrollingMovementMethod());
 
         // Show device ABI and Android version
-        String abi = BinaryInstaller.getPrimaryAbi();
+        String abi = Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown";
         tvInfo.setText("ABI: " + abi + "  |  Android " + Build.VERSION.RELEASE);
 
         btnStartStop.setOnClickListener(v -> {

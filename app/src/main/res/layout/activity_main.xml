@@ -39,7 +39,18 @@
         android:layout_height="wrap_content"
         android:text="ABI: ..."
         android:textColor="#666688"
-        android:textSize="11sp"
+        android:textSize="11sp" />
+
+    <!-- Local IP address (shown while the server is running) -->
+    <TextView
+        android:id="@+id/tv_ip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#00ff88"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:fontFamily="monospace"
         android:paddingBottom="8dp" />
 
     <!-- Start / Stop button -->

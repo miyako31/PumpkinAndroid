@@ -1,0 +1,21 @@
+# Android build outputs
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing keystores - never commit these
+*.jks
+*.keystore
+
+# Pumpkin binaries are built by CI, not committed
+app/src/main/assets/pumpkin/arm64-v8a/
+app/src/main/assets/pumpkin/x86_64/
+
+# Local Pumpkin source clone
+Pumpkin/
